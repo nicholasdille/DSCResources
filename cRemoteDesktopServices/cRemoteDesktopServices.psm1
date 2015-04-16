@@ -121,12 +121,12 @@ class cRDSessionDeployment {
 
 [DscResource()]
 class cRDSHConfiguration {
-
-    [DscProperty(Mandatory)]
-    [Ensure]$Ensure
  
     [DscProperty(Key)]
-    [String]$RDCB
+    [String]$ConnectionBroker
+ 
+    [DscProperty(Mandatory)]
+    [PSCredential]$Credential
 
     [Void] Set() {}
 
@@ -143,12 +143,12 @@ class cRDSHConfiguration {
 
 [DscResource()]
 class cRDWAConfiguration {
-
-    [DscProperty(Mandatory)]
-    [Ensure]$Ensure
  
     [DscProperty(Key)]
-    [String]$RDCB
+    [String]$ConnectionBroker
+ 
+    [DscProperty(Mandatory)]
+    [PSCredential]$Credential
 
     [Void] Set() {}
 
