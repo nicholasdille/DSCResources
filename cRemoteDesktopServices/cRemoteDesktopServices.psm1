@@ -220,15 +220,12 @@ class cRDWebAccessHost {
 class cRDSessionDeployment {
 
     [DscProperty(Key)]
-    [String]$Name
-
-    [DscProperty()]
     [string]$ConnectionBroker
  
-    [DscProperty()]
+    [DscProperty(Mandatory)]
     [String]$SessionHost
  
-    [DscProperty()]
+    [DscProperty(Mandatory)]
     [String]$WebAccess
  
     [DscProperty(Mandatory)]
@@ -243,14 +240,17 @@ class cRDSessionDeployment {
         }
 
         Write-Verbose 'Checking for quick deployment'
-        if ($this.ConnectionBroker -icontains $env:COMPUTERNAME -and
-            $this.WebAccess        -icontains $env:COMPUTERNAME -and
-            $this.SessionHost      -icontains $env:COMPUTERNAME) {
+        if ($this.ConnectionBroker -ieq $env:COMPUTERNAME -and
+            $this.WebAccess        -ieq $env:COMPUTERNAME -and
+            $this.SessionHost      -ieq $env:COMPUTERNAME) {
             Write-Verbose 'Creating new quick deployment'
             New-RDSessionDeployment -ConnectionBroker $env:COMPUTERNAME -SessionHost $env:COMPUTERNAME -WebAccessServer $env:COMPUTERNAME
             Write-Verbose 'Done creating quick deployment'
+
+            Write-Verbose 'Updating configuration'
             $Configuration = $this.Get()
         }
+
         if ($Configuration.ConnectionBroker -eq $null) {
             Write-Verbose ('Creating new deployment RDCB={0} RDSH={1} RDWA={2}' -f $env:COMPUTERNAME, $this.SessionHost, $this.WebAccess)
 
@@ -262,8 +262,10 @@ class cRDSessionDeployment {
                     Write-Verbose ('Creating new deployment using remoting RDCB={0} RDSH={1} RDWA={2}' -f $Using:RDCB, $Using:RDSH, $Using:RDWA)
                     New-RDSessionDeployment -ConnectionBroker $Using:RDCB -SessionHost $Using:RDSH -WebAccessServer $Using:RDWA
                 }
-
                 Write-Verbose 'Done creating deplyoment without exception'
+
+                Write-Verbose 'Updating configuration'
+                $Configuration = $this.Get()
 
             } catch {
                 Write-Verbose ('Failed to create deployment. Exception: {0}' -f $_.Exception.toString())
