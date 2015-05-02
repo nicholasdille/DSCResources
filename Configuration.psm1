@@ -56,21 +56,29 @@ Configuration RdsRoleWebAccess {
         $Credential
     )
 
-    #Import-DscResource -ModuleName cRemoteDesktopServices
+    Import-DscResource -ModuleName cRemoteDesktopServices
 
     WindowsFeature RDS-Web-Access {
         Name   = 'RDS-Web-Access'
         Ensure = 'Present'
     }
 
-    WaitForAll ConnectionBrokerHosts {
+    cRDWebAccessHost Deployment {
+        Ensure               = 'Present'
+        ConnectionBroker     = $ConnectionBroker
+        Credential           = $Credential
+        DependsOn            = '[WindowsFeature] RDS-Web-Access'
+    }
+
+
+    <#WaitForAll ConnectionBrokerHosts {
         Credential       = $Credential
         NodeName         = $ConnectionBrokerHost
         ResourceName     = '[cRDSessionDeployment]ConnectionBroker'
         RetryCount       = 60
         RetryIntervalSec = 60
         ThrottleLimit    = 5
-    }
+    }#>
 
     <#cRDWAConfiguration SessionHost {
         ConnectionBroker = $ConnectionBrokerHost
@@ -88,16 +96,16 @@ Configuration RdsRoleSessionHost {
         $Credential
     )
 
-    #Import-DscResource -ModuleName cRemoteDesktopServices
+    Import-DscResource -ModuleName cRemoteDesktopServices
 
     WindowsFeature RDS-RD-Server {
         Name   = 'RDS-RD-Server'
         Ensure = 'Present'
     }
 
-    cRDSessionDeployment Deployment {
+    cRDSessionHost Deployment {
+        Ensure               = 'Present'
         ConnectionBroker     = $ConnectionBroker
-        SessionHost          = $Node.NodeName
         Credential           = $Credential
         DependsOn            = '[WindowsFeature]RDS-RD-Server'
     }
@@ -182,11 +190,16 @@ Configuration RdsSessionTestDeployment {
                 Ensure = 'Present'
             }
 
-            cRDSessionHost Deployment {
+            WindowsFeature FeatureRDWA {
+                Name   = 'RDS-Web-Access'
+                Ensure = 'Present'
+            }
+
+            cRDWebAccessHost Deployment {
                 Ensure               = 'Absent'
                 ConnectionBroker     = $AllNodes.where{$_.Role -icontains 'ConnectionBroker' -or $_.Role -icontains 'All'}.NodeName
                 Credential           = $Credential
-                DependsOn            = '[WindowsFeature]FeatureRDSH'
+                DependsOn            = '[WindowsFeature]FeatureRDSH', '[WindowsFeature]FeatureRDWA'
             }
         }
     }
