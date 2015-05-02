@@ -9,4 +9,5 @@ Copy-Item -Path $DscResourcePath -Destination 'C:\Program Files\WindowsPowerShel
 Import-Module $ConfigurationFile -Force
 
 $ConfigData = Invoke-Expression -Command (Get-Content -Raw -Path $ConfigDataFile)
-RemoteDesktopSessionDeployment -Credential (Import-Clixml -Path $CredentialFile) -ConfigurationData $ConfigData -OutputPath $OutputPath
+RdsQuickSessionDeployment -Credential (Import-Clixml -Path $CredentialFile) -ConfigurationData $ConfigData -OutputPath $OutputPath
+RdsSessionTestDeployment  -Credential (Import-Clixml -Path $CredentialFile) -ConfigurationData $ConfigData -OutputPath $OutputPath
