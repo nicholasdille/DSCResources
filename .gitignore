@@ -2,6 +2,4 @@
 /Temp/*
 /Cert/*.pfx
 /Cred/*.clixml
-/Injection/*
-/Examples/*
 /*.mof
