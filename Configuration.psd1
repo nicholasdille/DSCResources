@@ -2,22 +2,16 @@
     AllNodes = @(
 
         @{
-            NodeName                    = 'RDS-01.demo.dille.name'
+            NodeName                    = 'RDS-01.example.com'
             Role                        = ('ConnectionBroker')
             PSDscAllowPlainTextPassword = $true
         }
 
         @{
-            NodeName                    = 'RDS-02.demo.dille.name'
+            NodeName                    = 'RDS-02.example.com'
             Role                        = ('SessionHost')
             PSDscAllowPlainTextPassword = $true
         }
-
-        <#@{
-            NodeName                    = 'RDS-03.demo.dille.name'
-            Role                        = 'SessionHost'
-            PSDscAllowPlainTextPassword = $true
-        }#>
 
     )
 }
