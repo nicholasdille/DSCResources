@@ -1,13 +1,12 @@
-﻿$DscResourcePath   = Join-Path -Path $PSScriptRoot -ChildPath 'cRemoteDesktopServices'
+﻿$DscResourcePath   = Join-Path -Path $PSScriptRoot -ChildPath '..\..\cRemoteDesktopServices'
 $ConfigurationFile = Join-Path -Path $PSScriptRoot -ChildPath 'Configuration.psm1'
 $ConfigDataFile    = Join-Path -Path $PSScriptRoot -ChildPath 'Configuration.psd1'
-$CredentialFile    = Join-Path -Path $PSScriptRoot -ChildPath 'Cred\administrator@DEMO.clixml'
-$OutputPath        = Join-Path -Path $PSScriptRoot -ChildPath 'Output'
+$Credential        = Get-Credential
+$OutputPath        = Join-Path -Path (Get-Location) -ChildPath 'Output'
 
 Copy-Item -Path $DscResourcePath -Destination 'C:\Program Files\WindowsPowerShell\Modules' -Recurse -Force
 
 Import-Module $ConfigurationFile -Force
 
 $ConfigData = Invoke-Expression -Command (Get-Content -Raw -Path $ConfigDataFile)
-RdsQuickSessionDeployment -Credential (Import-Clixml -Path $CredentialFile) -ConfigurationData $ConfigData -OutputPath $OutputPath
-RdsSessionTestDeployment  -Credential (Import-Clixml -Path $CredentialFile) -ConfigurationData $ConfigData -OutputPath $OutputPath
+RdsSessionDeployment -Credential $Credential -ConfigurationData $ConfigData -OutputPath $OutputPath
