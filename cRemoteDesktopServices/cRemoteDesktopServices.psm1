@@ -418,29 +418,38 @@ class cRDSessionDeployment {
 
     [cRDSessionDeployment] Get() {
         $Configuration = [hashtable]::new()
-        $Configuration['Name']             = $null
+        $Configuration['Ensure']           = 'Absent'
         $Configuration['ConnectionBroker'] = $null
         $Configuration['SessionHost']      = $null
         $Configuration['WebAccess']        = $null
+        $Configuration['Credential']       = $null
 
         Write-Verbose 'Initialized the hash table'
 
         try {
-            Write-Verbose 'Calling Get-RDServer'
-            $DeploymentRoles = Get-RDServer -ErrorAction SilentlyContinue
+            Write-Verbose ('Calling Get-RDServer on connection broker <{0}>' -f $this.ConnectionBroker)
+            $RDCB = $this.ConnectionBroker
+
+            $Session = New-PSSession -ComputerName $env:COMPUTERNAME -Authentication Credssp -Credential $this.Credential
+            $DeploymentRoles = Invoke-Command -Session $Session -ScriptBlock {
+                Write-Verbose ('Calling Get-RDServer')
+                Get-RDServer -ConnectionBroker $Using:RDCB -ErrorAction SilentlyContinue
+            }
+            
             Write-Verbose 'Populating hash table'
             $Configuration['ConnectionBroker'] = $DeploymentRoles | Where-Object {$_.Roles -icontains 'RDS-CONNECTION-BROKER'} | Select-Object -ExpandProperty Server | Get-Fqdn
             $Configuration['SessionHost']      = $DeploymentRoles | Where-Object {$_.Roles -icontains 'RDS-RD-SERVER'}         | Select-Object -ExpandProperty Server | Get-Fqdn
-            $Configuration['WebAccess']        = $DeploymentRoles | Where-Object {$_.Roles -icontains 'RDS-WEB-ACCESS'}        | Select-Object -ExpandProperty Server | Get-Fqdn
+            if ($Configuration['SessionHost'] -icontains (Get-Fqdn -ComputerName $env:COMPUTERNAME)) {
+                $Configuration['Ensure'] = 'Present'
+            }
+
             Write-Verbose 'Done populating without exception'
 
         } catch {
             Write-Verbose 'Error populating'
         }
 
-        Write-Verbose ('Current configuration RDCB={0} RDWA={1} RDSH={2}' -f ($Configuration['ConnectionBroker'] -join ','), ($Configuration['WebAccess'] -join ','), ($Configuration['SessionHost'] -join ','))
-
-        Write-Verbose 'Returning hash table'
+        Write-Verbose ('Returning hash table (RDCB={0}, RDSH={1}, RDWA={2})' -f ($Configuration['ConnectionBroker'] -join ','), ($Configuration['SessionHost'] -join ','), ($Configuration['WebAccess'] -join ','))
         return $Configuration
     }
 }
@@ -594,20 +603,108 @@ class cRDSessionCollection {
     #endregion
 
     [Void] Set() {
-        #https://technet.microsoft.com/en-us/library/jj215487%28v=wps.630%29.aspx
-        #New-RDSessionCollection -ConnectionBroker $this.ConnectionBroker -CollectionName $this.Name -CollectionDescription $this.Description -SessionHost $this.SessionHost
+        Write-Verbose 'Fetching configuration'
+        $Configuration = $this.Get()
 
-        #https://technet.microsoft.com/en-us/library/jj215443%28v=wps.630%29.aspx
-        #Set-RDSessionCollectionConfiguration ...
+        $RDCB = $this.ConnectionBroker
+
+        Write-Verbose ('Creating PowerShell session with credentials')
+        $Session = $null
+        try {
+            $Session = New-PSSession -ComputerName $env:COMPUTERNAME -Authentication Credssp -Credential $this.Credential
+        } catch {
+            Write-Error ('Failed to create session to {0} with CredSSP as {1}' -f $env:COMPUTERNAME, $this.Credential.UserName)
+        }
+
+        Write-Verbose 'Testing for existence'
+        if (-not $Configuration['Name'] -or $Configuration['Name'] -eq $null) {
+            $Collection = $this.Name
+            if ($this.Ensure -ieq 'Present') {
+                try {
+                    Write-Verbose ('Adding collection <{0}>' -f $Collection)
+                    Invoke-Command -Session $Session -ScriptBlock {
+                        Write-Verbose ('Extending deployment')
+                        New-RDSessionCollection -ConnectionBroker $Using:RDCB -CollectionName $Using:Collection -SessionHost $this.SessionHost
+                    }
+                    Write-Verbose 'Done creating deplyoment without exception'
+
+                } catch {
+                    Write-Error ('Failed to create deployment. Exception: {0}' -f $_.Exception.toString())
+                }
+
+            } elseif ($this.Ensure -ieq 'Absent') {
+                try {
+                    Write-Verbose ('Removing collection <{0}>' -f $Collection)
+                    Invoke-Command -Session $Session -ScriptBlock {
+                        Write-Verbose ('Removing collection')
+                        Remove-RDSessionCollection -ConnectionBroker $Using:RDCB -CollectionName $Using:Collection
+                    }
+                    Write-Verbose 'Done creating deplyoment without exception'
+
+                } catch {
+                    Write-Error ('Failed to create deployment. Exception: {0}' -f $_.Exception.toString())
+                }
+            }
+        }
+
+        if ((Compare-Object -ReferenceObject $this.SessionHost -DifferenceObject $Configuration['SessionHost']).Count -gt 0) {
+            #
+        }
     }
 
-    [Bool] Test() {return $false}
+    [Bool] Test() {
+        Write-Verbose 'Fetching configuration'
+        $Configuration = $this.Get()
+
+        Write-Verbose 'Checking configuration'
+        return ($Configuration['Ensure'] = 'Present')
+    }
 
     [cRDSessionCollection] Get() {
         $Configuration = [hashtable]::new()
-        $Configuration.Add('RDCB', '')
-        $Configuration.Add('Ensure',           'Absent')
+        $Configuration['Ensure']           = 'Present'
+        $Configuration['ConnectionBroker'] = $null
+        $Configuration['Name']             = $null
+        $Configuration['Description']      = $null
+        $Configuration['Credential']       = $null
 
+        Write-Verbose 'Initialized the hash table'
+
+        try {
+            Write-Verbose ('Calling cmdlets on connection broker <{0}>' -f $this.ConnectionBroker)
+            $RDCB = $this.ConnectionBroker
+            $Collection = $this.Name
+
+            Write-Verbose ('Creating session')
+            $Session = New-PSSession -ComputerName $env:COMPUTERNAME -Authentication Credssp -Credential $this.Credential
+            Write-Verbose ('Fetching general properties')
+            $Collection = Invoke-Command -Session $Session -ScriptBlock {
+                Write-Verbose ('Calling now')
+                Get-RDSessionCollectionConfiguration -ConnectionBroker $Using:RDCB -CollectionName $Using:Collection -ErrorAction SilentlyContinue
+            }
+            Write-Verbose ('Fetching associated session hosts')
+            $SessionHosts = Invoke-Command -Session $Session -ScriptBlock {
+                Write-Verbose ('Calling now')
+                Get-RDSessionHost -ConnectionBroker $Using:RDCB -CollectionName $Using:Collection
+            }
+            
+            Write-Verbose 'Populating hash table'
+            $Configuration['Name']         = $Collection.CollectionName
+            $Configuration['Description']  = $Collection.CollectionDescription
+            $Configuration['SessionHosts'] = $SessionHosts | Select-Object -ExpandProperty SessionHost
+            Write-Verbose 'Done populating without exception'
+
+        } catch {
+            Write-Error 'Error populating'
+        }
+
+        Write-Verbose ('Checking compliance')
+        if ($Configuration['Name']        -ine $this.Name)        { $Configuration['Ensure'] = 'Absent' }
+        if ($Configuration['Description'] -ine $this.Description) { $Configuration['Ensure'] = 'Absent' }
+
+        if ((Compare-Object -ReferenceObject $this.SessionHost -DifferenceObject $Configuration['SessionHost']).Count -gt 0) {$Configuration['Ensure'] = 'Absent'}
+
+        Write-Verbose ('Returning hash table')
         return $Configuration
     }
 }
