@@ -195,11 +195,11 @@ Configuration RdsSessionTestDeployment {
                 Ensure = 'Present'
             }
 
-            cRDWebAccessHost Deployment {
+            cRDSessionHost Deployment {
                 Ensure               = 'Absent'
                 ConnectionBroker     = $AllNodes.where{$_.Role -icontains 'ConnectionBroker' -or $_.Role -icontains 'All'}.NodeName
                 Credential           = $Credential
-                DependsOn            = '[WindowsFeature]FeatureRDSH', '[WindowsFeature]FeatureRDWA'
+                DependsOn            = '[WindowsFeature]FeatureRDSH'
             }
         }
     }
