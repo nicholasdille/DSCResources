@@ -219,10 +219,6 @@ class cRDWebAccessHost {
 [DscResource()]
 class cRDSessionDeployment {
 
-    #region Parameters
-    [DscProperty(Mandatory)]
-    [Ensure]$Ensure
-    
     [DscProperty(Key)]
     [string]$ConnectionBroker
  
@@ -234,38 +230,39 @@ class cRDSessionDeployment {
  
     [DscProperty(Mandatory)]
     [PSCredential]$Credential
-    #endregion
 
     [Void] Set() {
         Write-Verbose 'Fetching configuration'
         $Configuration = $this.Get()
 
-        if ($Configuration.ConnectionBroker -ne $null -and $Configuration.ConnectionBroker -ne '') {
+        if ([string]::IsNullOrEmpty($Configuration.ConnectionBroker) -eq $false) {
             throw ('A RDS deployment is already present (RDCB={0} // RDWA={1} // RDSH={2})' -f ($Configuration.ConnectionBroker -join ','), ($Configuration.WebAccess -join ','), ($Configuration.SessionHost -join ','))
         }
-
-        $ComputerName = Get-Fqdn -ComputerName $env:COMPUTERNAME
-
+	$CBFQDN = Get-FQDN $this.ConnectionBroker
+	$SHFQDN	= Get-FQDN $this.Sessionhost
+	$WAFQDN = Get-FQDN $this.WebAccess
         Write-Verbose 'Checking for quick deployment'
-        if ($this.ConnectionBroker -ieq $ComputerName -and
-            $this.WebAccess        -ieq $ComputerName -and
-            $this.SessionHost      -ieq $ComputerName) {
-            Write-Verbose 'Creating new quick deployment'
-            New-RDSessionDeployment -ConnectionBroker $ComputerName -SessionHost $ComputerName -WebAccessServer $ComputerName
-            Write-Verbose 'Done creating quick deployment'
+        if ($this.ConnectionBroker -ieq $env:COMPUTERNAME -and
+            $this.WebAccess        -ieq $env:COMPUTERNAME -and
+            $this.SessionHost      -ieq $env:COMPUTERNAME) {
+            Write-Verbose "Creating new quick deployment: CB=$CBFQDN SH=$SHFQDN WA=$WAFQDN"
+            Invoke-Command -ComputerName $env:COMPUTERNAME -Authentication Credssp -Credential $this.Credential -ScriptBlock {
+                    Write-Verbose ('Creating new deployment using remoting RDCB={0} RDSH={1} RDWA={2}' -f $Using:CBFQDN, $Using:SHFQDN, $Using:WAFQDN)
+                    New-RDSessionDeployment -ConnectionBroker $Using:CBFQDN -SessionHost $Using:SHFQDN -WebAccessServer $Using:WAFQDN
+                }
 
             Write-Verbose 'Updating configuration'
             $Configuration = $this.Get()
         }
 
         if ($Configuration.ConnectionBroker -eq $null) {
-            Write-Verbose ('Creating new deployment RDCB={0} RDSH={1} RDWA={2}' -f $ComputerName, $this.SessionHost, $this.WebAccess)
+            Write-Verbose ('Creating new deployment RDCB={0} RDSH={1} RDWA={2}' -f $env:COMPUTERNAME, $this.SessionHost, $this.WebAccess)
 
             try {
-                $RDCB = $ComputerName
+                $RDCB = $env:COMPUTERNAME
                 $RDWA = $this.WebAccess
                 $RDSH = $this.SessionHost
-                Invoke-Command -ComputerName $ComputerName -Authentication Credssp -Credential $this.Credential -ScriptBlock {
+                Invoke-Command -ComputerName $env:COMPUTERNAME -Authentication Credssp -Credential $this.Credential -ScriptBlock {
                     Write-Verbose ('Creating new deployment using remoting RDCB={0} RDSH={1} RDWA={2}' -f $Using:RDCB, $Using:RDSH, $Using:RDWA)
                     New-RDSessionDeployment -ConnectionBroker $Using:RDCB -SessionHost $Using:RDSH -WebAccessServer $Using:RDWA
                 }
@@ -283,11 +280,12 @@ class cRDSessionDeployment {
     }
 
     [Bool] Test() {
+	
         Write-Verbose 'Fetching configuration'
         $Configuration = $this.Get()
-
+	write-verbose $Configuration
         Write-Verbose 'Checking for RDCB role'
-        if ($Configuration.ConnectionBroker -eq $null -or $Configuration.ConnectionBroker -eq '') {
+        if ([string]::IsNullOrEmpty($Configuration.ConnectionBroker)) {
             Write-Verbose 'No deployment present. Returning $false'
             return $false
 
@@ -299,38 +297,28 @@ class cRDSessionDeployment {
 
     [cRDSessionDeployment] Get() {
         $Configuration = [hashtable]::new()
-        $Configuration['Ensure']           = 'Absent'
         $Configuration['ConnectionBroker'] = $null
         $Configuration['SessionHost']      = $null
         $Configuration['WebAccess']        = $null
-        $Configuration['Credential']       = $null
 
         Write-Verbose 'Initialized the hash table'
 
         try {
-            Write-Verbose ('Calling Get-RDServer on connection broker <{0}>' -f $this.ConnectionBroker)
-            $RDCB = $this.ConnectionBroker
-
-            $Session = New-PSSession -ComputerName $env:COMPUTERNAME -Authentication Credssp -Credential $this.Credential
-            $DeploymentRoles = Invoke-Command -Session $Session -ScriptBlock {
-                Write-Verbose ('Calling Get-RDServer')
-                Get-RDServer -ConnectionBroker $Using:RDCB -ErrorAction SilentlyContinue
-            }
-            
+            Write-Verbose 'Calling Get-RDServer'
+            $DeploymentRoles = Get-RDServer -ErrorAction SilentlyContinue
             Write-Verbose 'Populating hash table'
             $Configuration['ConnectionBroker'] = $DeploymentRoles | Where-Object {$_.Roles -icontains 'RDS-CONNECTION-BROKER'} | Select-Object -ExpandProperty Server | Get-Fqdn
             $Configuration['SessionHost']      = $DeploymentRoles | Where-Object {$_.Roles -icontains 'RDS-RD-SERVER'}         | Select-Object -ExpandProperty Server | Get-Fqdn
-            if ($Configuration['SessionHost'] -icontains (Get-Fqdn -ComputerName $env:COMPUTERNAME)) {
-                $Configuration['Ensure'] = 'Present'
-            }
-
+            $Configuration['WebAccess']        = $DeploymentRoles | Where-Object {$_.Roles -icontains 'RDS-WEB-ACCESS'}        | Select-Object -ExpandProperty Server | Get-Fqdn
             Write-Verbose 'Done populating without exception'
 
         } catch {
             Write-Verbose 'Error populating'
         }
 
-        Write-Verbose ('Returning hash table (RDCB={0}, RDSH={1}, RDWA={2})' -f ($Configuration['ConnectionBroker'] -join ','), ($Configuration['SessionHost'] -join ','), ($Configuration['WebAccess'] -join ','))
+        Write-Verbose ('Current configuration RDCB={0} RDWA={1} RDSH={2}' -f ($Configuration['ConnectionBroker'] -join ','), ($Configuration['WebAccess'] -join ','), ($Configuration['SessionHost'] -join ','))
+
+        Write-Verbose 'Returning hash table'
         return $Configuration
     }
 }
